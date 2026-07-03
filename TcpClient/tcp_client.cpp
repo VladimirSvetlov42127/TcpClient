@@ -94,9 +94,8 @@ void TcpClient::onReadyRead()
 
 		// Защита от "слипания" пакетов: если сервер успел отправить что-то еще,
 		// рекурсивно вызываем эту же функцию, чтобы обработать остаток байт
-		if (_socket->bytesAvailable() > 0) {
+		if (_socket->bytesAvailable() > 0)
 			onReadyRead();
-		}
 	}
 }
 
