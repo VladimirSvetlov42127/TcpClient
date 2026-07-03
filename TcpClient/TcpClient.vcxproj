@@ -99,6 +99,7 @@
     <QtMoc Include="tcp_client.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="client_namespace.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>

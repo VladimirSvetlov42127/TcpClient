@@ -58,8 +58,8 @@ private:
     quint16 _next_size;
 	QByteArray _total_data;
 
-    quint32 m_incomingTotalSize = 0; // Ожидаемый размер массива от сервера
-    QByteArray m_receivedBuffer;     // Буфер для сборки 100 МБ
+    quint32 _total_size = 0;            // Ожидаемый размер массива от сервера
+    QByteArray _buffer;                 // Буфер для сборки 100 МБ
 };
 
 #endif __TCP_CLIENT_H__
