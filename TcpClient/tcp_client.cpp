@@ -9,6 +9,11 @@
 #include <QMessageBox>
 #include <QDataStream>
 
+//  Подключение библиотекк QT
+#include <QThread>
+#include <QFuture>
+#include <QtConcurrent>
+
 
 
 //===================================================================================================================================================
@@ -53,24 +58,74 @@ TcpClient::~TcpClient()
 //===================================================================================================================================================
 void TcpClient::onReadyRead()
 {
-	if (!_socket) return;
-	if (_socket->state() != QAbstractSocket::ConnectedState)
-		return;
+	//if (!_socket) return;
+	//if (_socket->state() != QAbstractSocket::ConnectedState)
+	//	return;
 
-	 QDataStream ios(_socket);
-	 ios.setVersion(QDataStream::Qt_5_15);
-	 QByteArray data;
-	 qint64 bytes = _socket->bytesAvailable();
+	// QDataStream ios(_socket);
+	// ios.setVersion(QDataStream::Qt_5_15);
+	// QByteArray data;
+	// qint64 bytes = _socket->bytesAvailable();
+	// qDebug() << "Bytes available: " << bytes;	
 
-	ios.startTransaction();
-	ios >> data;
-	if (data.isNull()) {
-	    ios.rollbackTransaction();
-	    return;
+	//ios.startTransaction();
+	//ios >> data;
+	//if (data.isNull()) {
+	//    ios.rollbackTransaction();
+	//    return;
+	//}
+	//ios.commitTransaction();
+	////_receive_text->setText(_receive_text->toPlainText() + QString(data));
+	////textUpdate(data);
+	//qDebug() << "Received data: " << data.size();
+	//QMetaObject::invokeMethod(this, [this, data]() {
+ //   	_receive_text->setText(_receive_text->toPlainText() + QString(data));
+	//}, Qt::QueuedConnection);
+
+
+		// Связываем стрим с сокетом для безопасного чтения заголовка размера
+	QDataStream in(_socket);
+	in.setVersion(QDataStream::Qt_5_15);
+
+	// 1. Читаем заголовок размера (выполняется 1 раз для каждого большого пакета)
+	if (m_incomingTotalSize == 0) {
+		// Если пришло меньше 4 байт, размер узнать нельзя. Ждем досылки.
+		if (_socket->bytesAvailable() < sizeof(quint32)) {
+			return;
+		}
+
+		// Считываем чистый размер будущего QByteArray
+		in >> m_incomingTotalSize;
+
+		// Важнейшая оптимизация: заранее выделяем память под 100 МБ,
+		// чтобы избежать зависаний из-за переаллокаций при склейке массива
+		m_receivedBuffer.reserve(m_incomingTotalSize);
 	}
 
-	ios.commitTransaction();
-	_receive_text->setText(_receive_text->toPlainText() + QString(data));
+	// 2. Считываем все доступные в данный момент байты из сети
+	if (_socket->bytesAvailable() > 0) {
+		// readAll() забирает всё, что физически долетело в буфер ОС на эту секунду
+		m_receivedBuffer.append(_socket->readAll());
+	}
+
+	// 3. Проверяем, собрали ли мы массив полностью
+	if ((quint32)m_receivedBuffer.size() >= m_incomingTotalSize) {
+
+		// ДАННЫЕ УСПЕШНО СОБРАНЫ И СКЛЕЕНЫ В ОДИН МАССИВ!
+		// Передаем готовый QByteArray в вашу функцию обработки на клиенте
+		_receive_text->setText(QString(m_receivedBuffer));
+
+		// СБРОС СОСТОЯНИЯ: Очищаем триггеры для приема следующего пакета от сервера
+		m_incomingTotalSize = 0;
+		m_receivedBuffer.clear();
+
+		// Защита от "слипания" пакетов: если сервер успел отправить что-то еще,
+		// рекурсивно вызываем эту же функцию, чтобы обработать остаток байт
+		if (_socket->bytesAvailable() > 0) {
+			onReadyRead();
+		}
+	}
+
 }
 
 void TcpClient::onConnect()
@@ -174,5 +229,11 @@ void TcpClient::makeWindow()
 	layout->addWidget(_receive_text);
 
 	setCentralWidget(central);
+}
+
+
+void TcpClient::textUpdate(const QByteArray& data)
+{
+	_receive_text->setText(_receive_text->toPlainText() + QString(data));
 }
 

@@ -41,6 +41,7 @@ private slots:
 private:
     //  Вспомогательные методы класса
     void makeWindow();
+    void textUpdate(const QByteArray& data);
      
     //  Свойства класса
     QLineEdit* _ip_edit;
@@ -56,6 +57,9 @@ private:
     QTcpSocket* _socket;
     quint16 _next_size;
 	QByteArray _total_data;
+
+    quint32 m_incomingTotalSize = 0; // Ожидаемый размер массива от сервера
+    QByteArray m_receivedBuffer;     // Буфер для сборки 100 МБ
 };
 
 #endif __TCP_CLIENT_H__
