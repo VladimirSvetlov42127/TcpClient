@@ -2,7 +2,7 @@
 #define __TCP_CLIENT_H__
 
 
-//	Подключение библиотек QT
+//	РџРѕРґРєР»СЋС‡РµРЅРёРµ Р±РёР±Р»РёРѕС‚РµРє QT
 #include <QMainWindow>
 #include <QWidget>
 #include <QObject>
@@ -15,7 +15,7 @@
 
 
 //===================================================================================================================================================
-//  Основной класс программы
+//  РћСЃРЅРѕРІРЅРѕР№ РєР»Р°СЃСЃ РїСЂРѕРіСЂР°РјРјС‹
 //===================================================================================================================================================
 class TcpClient : public QMainWindow
 {
@@ -25,7 +25,7 @@ public:
     TcpClient(QWidget* parent = nullptr);
     ~TcpClient();
 
-    //	Правило пяти
+    //	РџСЂР°РІРёР»Рѕ РїСЏС‚Рё
     TcpClient(const TcpClient& other) = delete;
     TcpClient(TcpClient&& other) = delete;
     TcpClient& operator=(const TcpClient& other) = delete;
@@ -39,11 +39,11 @@ private slots:
     void onSocketError();
 
 private:
-    //  Вспомогательные методы класса
+    //  Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ РјРµС‚РѕРґС‹ РєР»Р°СЃСЃР°
     void makeWindow();
     void textUpdate(const QByteArray& data);
      
-    //  Свойства класса
+    //  РЎРІРѕР№СЃС‚РІР° РєР»Р°СЃСЃР°
     QLineEdit* _ip_edit;
     QLineEdit* _port_edit;
     QPushButton* _connect_button;
@@ -55,11 +55,10 @@ private:
     uint16_t _port;
     QString _ip_address;
     QTcpSocket* _socket;
-    quint16 _next_size;
-	QByteArray _total_data;
 
-    quint32 _total_size = 0;            // Ожидаемый размер массива от сервера
-    QByteArray _buffer;                 // Буфер для сборки 100 МБ
+    qint64 _total_size;             //   РћР¶РёРґР°РµРјС‹Р№ СЂР°Р·РјРµСЂ РІСЃРµРіРѕ РјР°СЃСЃРёРІР°.
+    QByteArray _buffer;             //  Р‘СѓС„РµСЂ РґР»СЏ СЃР±РѕСЂРєРё.
+    qint64 _bytes;                  //  РЎС‡РµС‚С‡РёРє РїСЂРёРЅСЏС‚С‹С… Р±Р°Р№С‚.
 };
 
-#endif __TCP_CLIENT_H__
+#endif //__TCP_CLIENT_H__

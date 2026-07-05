@@ -9,6 +9,5 @@ int main(int argc, char *argv[])
     TcpClient client;
     client.show();
 
-
     return app.exec();
 }
