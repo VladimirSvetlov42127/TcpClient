@@ -5,6 +5,7 @@ namespace {
 	const int STREAM_VERSION = QDataStream::Qt_5_15;
 	const int WAIT_WRITTEN = 3000;
 	const qint64 CHUNK_SIZE = 65536;
+    const qint64 MAX_SIZE = 524288;
 }
 
 

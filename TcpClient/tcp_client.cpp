@@ -22,9 +22,9 @@
 // Конструктор и деструктор класса
 //===================================================================================================================================================
 TcpClient::TcpClient(QWidget* parent) :
-    QMainWindow(parent),
-    _total_size(-1),
-    _bytes(0)
+    QMainWindow(parent)     //  ,
+    // _total_size(-1),
+    // _bytes(0)
 {
 	//	Создание и привязка сокета
 	_socket = new QTcpSocket(this);
@@ -63,44 +63,97 @@ TcpClient::~TcpClient()
 void TcpClient::onReadyRead()
 {
 	_send_text->clear();
-
-    QDataStream in(_socket);
-    in.setVersion(STREAM_VERSION);
-
-    //  Получение общего размера массива (если еще не получили)
+    // 1. Читаем заголовок (размер)
     if (_total_size == -1) {
-         // Ожидание, пока придут первые 8 байт размера
         if (_socket->bytesAvailable() < (qint64)sizeof(qint64)) {
             return;
         }
+        QDataStream in(_socket);
+        in.setVersion(STREAM_VERSION);
         in >> _total_size;
-        //  Выделение памяти заранее (оптимизация)
-        _buffer.reserve(_total_size);
+
+        // Жесткое выделение памяти один раз
+        _buffer.resize(_total_size);
+        _bytes = 0;
     }
 
-    //  Чтение доступных в сокете данных чанками
-    qint64 new_bytes = qMin(_socket->bytesAvailable(), _total_size - _bytes);
-    if (new_bytes > 0) {
-        QByteArray chunk = _socket->read(new_bytes);
-        _buffer.append(chunk);
-        _bytes += chunk.size();
+    // 2. Чтение напрямую в память сокета (Zero-Copy)
+    while (_socket->bytesAvailable() > 0 && _bytes < _total_size) {
+        qint64 bytes_left = _total_size - _bytes;
+        qint64 new_bytes = qMin(_socket->bytesAvailable(), bytes_left);
+
+        qint64 read_bytes = _socket->read(_buffer.data() + _bytes, new_bytes);
+        if (read_bytes > 0) {
+            _bytes += read_bytes;
+        }
     }
 
-    //  Проверка, собран ли массив полностью
+    // 3. Пакет собран полностью
     if (_bytes == _total_size) {
-        //  МАССИВ ПОЛНОСТЬЮ ПРИНЯТ. Обработка данных
+        // Отправляем данные в пул потоков без копирования
+        //QtConcurrent::run(_processor, &ArcProcessing::setData, std::move(_buffer));
         _receive_text->setText(QString(_buffer));
 
-        //  Сброс состояние для приема следующего массива
-        _buffer.clear();
+        // Сброс состояния клиента
         _total_size = -1;
         _bytes = 0;
 
-        // Если в сокете осталось что-то от следующего пакета, рекурсивная обработка
+        // Перевыделяем внутренний массив, так как std::move сделал его валидным, но пустым
+        _buffer = QByteArray();
+
+        // Обработка хвоста следующего пакета без рекурсии
         if (_socket->bytesAvailable() > 0) {
-            onReadyRead();
+            // Так как мы в отдельном потоке, QueuedConnection безопасно вызовет onReadyRead
+            // на следующей итерации цикла событий ЭТОГО потока.
+            QMetaObject::invokeMethod(this, "onReadyRead", Qt::QueuedConnection);
         }
     }
+
+
+
+    //
+    //
+    //
+    // QDataStream in(_socket);
+    // in.setVersion(STREAM_VERSION);
+    //
+    // //  Получение общего размера массива (если еще не получили)
+    // if (_total_size == -1) {
+    //      // Ожидание, пока придут первые 8 байт размера
+    //     if (_socket->bytesAvailable() < (qint64)sizeof(qint64)) {
+    //         return;
+    //     }
+    //     in >> _total_size;
+    //     //  Выделение памяти заранее (оптимизация)
+    //     _buffer.reserve(_total_size);
+    // }
+    //
+    // //  Чтение доступных в сокете данных чанками
+    // qint64 new_bytes = qMin(_socket->bytesAvailable(), _total_size - _bytes);
+    // if (new_bytes > 0) {
+    //     QByteArray chunk = _socket->read(new_bytes);
+    //     _buffer.append(chunk);
+    //     _bytes += chunk.size();
+    // }
+    //
+    // //  Проверка, собран ли массив полностью
+    // if (_bytes == _total_size) {
+    //     //  МАССИВ ПОЛНОСТЬЮ ПРИНЯТ. Обработка данных
+    //     _receive_text->setText(QString(_buffer));
+    //
+    //     //  Сброс состояние для приема следующего массива
+    //     _buffer.clear();
+    //     _total_size = -1;
+    //     _bytes = 0;
+    //
+    //     // Если в сокете осталось что-то от следующего пакета, рекурсивная обработка
+    //     if (_socket->bytesAvailable() > 0) {
+    //         onReadyRead();
+    //     }
+    // }
+    //
+    //
+    //
 }
 
 void TcpClient::onConnect()
@@ -131,23 +184,49 @@ void TcpClient::onDisconnect()
 void TcpClient::onSend()
 {
 	QByteArray data = _send_text->toPlainText().toUtf8();
+    _receive_text->clear();
 
-    QDataStream out(_socket);
+    // Забираем владение данными в поток сокета (Zero-Copy)
+    _data_to_send = std::move(data);
+    _send_offset = 0;
+
+    // Подключаемся к сигналу заполнения буфера ОС
+    connect(_socket, &QTcpSocket::bytesWritten, this, &TcpClient::sendNextChunk);
+
+    // Формируем и отправляем заголовок размера
+    qint64 total_size = _data_to_send.size();
+    QByteArray header;
+    QDataStream out(&header, QIODevice::WriteOnly);
     out.setVersion(STREAM_VERSION);
-
-    //  Отправка общего размера всего массива
-    qint64 total_size = data.size();
     out << total_size;
 
-    //  Отправка данные частями
-    qint64 offset = 0;
+    _socket->write(header);
 
-    while (offset < total_size) {
-        qint64 current_chunk_size = qMin(CHUNK_SIZE, total_size - offset);
-        _socket->write(data.constData() + offset, current_chunk_size);
-        _socket->flush();
-        offset += current_chunk_size;
-    }
+    // Начинаем отправку первого чанка данных
+    sendNextChunk();
+
+    //
+    //
+    //
+    // QDataStream out(_socket);
+    // out.setVersion(STREAM_VERSION);
+    //
+    // //  Отправка общего размера всего массива
+    // qint64 total_size = data.size();
+    // out << total_size;
+    //
+    // //  Отправка данные частями
+    // qint64 offset = 0;
+    //
+    // while (offset < total_size) {
+    //     qint64 current_chunk_size = qMin(CHUNK_SIZE, total_size - offset);
+    //     _socket->write(data.constData() + offset, current_chunk_size);
+    //     _socket->flush();
+    //     offset += current_chunk_size;
+    // }
+    //
+    //
+
     _send_text->clear();
 }
 
@@ -158,6 +237,38 @@ void TcpClient::onSocketError()
 	msgBox.exec();
 	onDisconnect();
 }
+
+void TcpClient::sendNextChunk()
+{
+    qint64 total_size = _data_to_send.size();
+
+    // Все данные ушли в сетевой стек
+    if (_send_offset >= total_size) {
+        disconnect(_socket, &QTcpSocket::bytesWritten, this, &TcpClient::sendNextChunk);
+
+        //  Полное освобождение ОЗУ
+        _data_to_send = QByteArray();
+        return;
+    }
+
+    //  Пока внутренний буфер Qt не переполнен, идет отправка чанков по 64 КБ
+    //  Порог в 512 КБ гарантирует, что сеть не будет простаивать
+    while (_socket->bytesToWrite() < MAX_SIZE) {
+        qint64 current_chunk_size = qMin(CHUNK_SIZE, total_size - _send_offset);
+        qint64 written = _socket->write(_data_to_send.constData() + _send_offset, current_chunk_size);
+
+        //  Буфер переполнен, ожидание следующего сигнала bytesWritten
+        if (written <= 0)
+            break;
+        _send_offset += written;
+        if (_send_offset >= total_size)
+            break;
+    }
+}
+
+
+
+
 
 
 //===================================================================================================================================================

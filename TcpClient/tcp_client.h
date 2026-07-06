@@ -37,6 +37,7 @@ private slots:
     void onDisconnect();
     void onSend();
     void onSocketError();
+    void sendNextChunk();
 
 private:
     //  Вспомогательные методы класса
@@ -56,9 +57,23 @@ private:
     QString _ip_address;
     QTcpSocket* _socket;
 
-    qint64 _total_size;             //   Ожидаемый размер всего массива.
-    QByteArray _buffer;             //  Буфер для сборки.
-    qint64 _bytes;                  //  Счетчик принятых байт.
+    // qint64 _total_size;             //   Ожидаемый размер всего массива.
+    // QByteArray _buffer;             //  Буфер для сборки.
+    // qint64 _bytes;                  //  Счетчик принятых байт.
+
+    //
+    //
+    // Свойства состояния ПРИЕМА данных
+    qint64 _total_size = -1; // -1 означает, что ждем заголовок
+    qint64 _bytes = 0;       // Сколько байт текущего пакета уже прочитано
+    QByteArray _buffer;      // Буфер, куда пишем данные напрямую
+
+    // Свойства состояния ОТПРАВКИ данных
+    qint64 _send_offset = 0; // На каком байте отправки мы сейчас находимся
+    QByteArray _data_to_send;// Удерживает отправляемый пакет в потоке клиента
+    //
+    //
+
 };
 
 #endif //__TCP_CLIENT_H__
